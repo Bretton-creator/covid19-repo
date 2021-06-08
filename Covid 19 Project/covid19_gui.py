@@ -1,5 +1,6 @@
 from tkinter import *
 from tkinter import messagebox as ms
+from tkinter import ttk
 import sqlite3
 import pandas as pd
 from matplotlib.figure import Figure
@@ -31,6 +32,8 @@ class main:
         # Register
         self.Username = StringVar()
         self.Password = StringVar()
+
+        self.state = StringVar()
 
         self.id = StringVar()
         self.clicked = StringVar()
@@ -80,23 +83,6 @@ class main:
 
         db.commit()
 
-    def addUser(self):
-        with sqlite3.connect('Users.db') as db:
-            cursor = db.cursor()
-
-        # Check if username already exists
-        check_user = ('SELECT username FROM Users WHERE username = ?')
-        cursor.execute(check_user, [(self.Username.get())])
-        if cursor.fetchall():
-            ms.showerror('Username Already Taken')
-        else:
-            insert = 'INSERT INTO Users(First, Last, Email, username, password) VALUES(?,?,?,?,?)'
-            cursor.execute(insert, [(self.First_Name.get()), (self.Last_Name.get(
-            )), (self.Email.get()), (self.Username.get()), (self.Password.get())])
-            ms.showinfo('Registration Complete')
-
-        db.commit()
-
     # Bring user back to login page
 
     def log(self):
@@ -143,10 +129,18 @@ class main:
 
         cursor.execute('DELETE from Users WHERE oid = ?', (self.id.get(),))
 
-        #delete_box.delete(0, END)
+        # delete_box.delete(0, END)
 
       # Commit Changes
         db.commit()
+
+    def goToUS(self):
+        self.user_page.pack_forget()
+        self.us_page.pack()
+
+    def goToUser(self):
+        self.us_page.pack_forget()
+        self.user_page.pack()
 
     # Plot data onto GUI
 
@@ -168,11 +162,11 @@ class main:
         melt_c_df["Date"] = pd.to_datetime(melt_c_df["Date"])
         max_date = melt_c_df["Date"].max()
         total_c_df = melt_c_df[melt_c_df["Date"] == max_date]
-
+        total_c_df = total_c_df.loc[total_c_df[self.clicked.get()] >= 100000]
         country = total_c_df['Country']
         cases = total_c_df[self.clicked.get()]
 
-        fig = Figure(figsize=(25, 8), dpi=80)
+        fig = Figure(figsize=(15, 8), dpi=80)
         plot1 = fig.add_subplot(111)
         plot1.bar(country, cases, width=0.2)
         plot1.set_title(self.clicked.get()+' Cases by Country')
@@ -180,6 +174,38 @@ class main:
         plot1.set_xticklabels(country, rotation=90)
 
         canvas = FigureCanvasTkAgg(fig, self.user_page)
+        canvas.draw()
+        canvas.get_tk_widget().grid(row=2, column=1)
+
+    def plot_states(self):
+        choice = self.clicked.get()
+        if choice == 'Confirmed':
+            df = pd.read_csv('time_series_covid_19_confirmed_US.csv')
+        else:
+            df = pd.read_csv('time_series_covid_19_deaths_US.csv')
+            df = df.drop(columns=["Population"])
+
+        df = df.drop(columns=["UID", "iso2", "iso3", "code3", "FIPS",
+                     "Admin2", "Country_Region", "Lat", "Long_", "Combined_Key"])
+        df = df.groupby("Province_State").aggregate(np.sum).T
+        df.index.name = "Date"
+        df = df.reset_index()
+        melt_s_df = df.melt(
+            id_vars=["Date"], var_name="Province_State", value_name=self.clicked.get())
+        melt_s_df["Date"] = pd.to_datetime(melt_s_df["Date"])
+        max_date = melt_s_df["Date"].max()
+        total_s_df = melt_s_df[melt_s_df["Date"] == max_date]
+        states = total_s_df['Province_State']
+        cases = total_s_df[self.clicked.get()]
+
+        fig = Figure(figsize=(15, 8), dpi=80)
+        plot1 = fig.add_subplot(111)
+        plot1.bar(states, cases, width=0.2)
+        plot1.set_title(self.clicked.get()+' Cases by States')
+        plot1.set_ylabel('Cases')
+        plot1.set_xticklabels(states, rotation=90)
+
+        canvas = FigureCanvasTkAgg(fig, self.us_page)
         canvas.draw()
         canvas.get_tk_widget().grid(row=2, column=1)
 
@@ -254,7 +280,7 @@ class main:
         Entry(self.admin_page, textvariable=self.Password, bd=5,
               font=('', 15), show='*').grid(row=4, column=1)
         Button(self.admin_page, text='Add User', bd=3, font=(
-            '', 15), padx=5, pady=5, command=self.addUser).grid()
+            '', 15), padx=5, pady=5, command=self.register).grid()
         Label(self.admin_page, text="Enter ID", bd=3,
               font=('', 15)).grid(row=6, column=0)
         Entry(self.admin_page, textvariable=self.id,
@@ -266,9 +292,6 @@ class main:
         Button(self.admin_page, text="List Users", bd=3, font=('', 15),
                padx=5, pady=5, command=self.listUsers).grid(row=7, column=1)
 
-        # User page
-        self.user_page = Frame(self.tk, padx=10, pady=10)
-
         # Drop Down Menu
         options = [
             "Confirmed",
@@ -278,10 +301,25 @@ class main:
 
         # Initial Option
         self.clicked.set(options[0])
+
+        # US Page
+        self.us_page = Frame(self.tk, padx=10, pady=10)
+        Button(self.us_page, text='View World',
+               command=self.goToUser).grid(row=1, column=2)
+
+        OptionMenu(self.us_page, self.clicked, *["Confirmed", "Deaths"]).grid(row=0, column=1)
+        Button(self.us_page, text='Plot',
+               command=self.plot_states).grid(row=1, column=1)
+        # User page
+
+        self.user_page = Frame(self.tk, padx=10, pady=10)
+
         OptionMenu(self.user_page, self.clicked,
                    *options).grid(row=0, column=1)
         Button(self.user_page, text='Plot',
                command=self.plot).grid(row=1, column=1)
+        Button(self.user_page, text='View US',
+               command=self.goToUS).grid(row=1, column=2)
 
 
 if __name__ == '__main__':
